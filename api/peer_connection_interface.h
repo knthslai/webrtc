@@ -83,6 +83,7 @@
 #include "api/audio/audio_device.h"
 #include "api/audio/audio_mixer.h"
 #include "api/audio/audio_processing.h"
+#include "api/audio/audio_processing_state.h"
 #include "api/audio_codecs/audio_decoder_factory.h"
 #include "api/audio_codecs/audio_encoder_factory.h"
 #include "api/audio_options.h"
@@ -691,6 +692,14 @@ class RTC_EXPORT PeerConnectionInterface : public RefCountInterface {
     // no datachannel have been created yet.
     // https://github.com/w3c/webrtc-pc/issues/3072
     bool always_negotiate_data_channels = false;
+    // When this flag is set, ports not bound to any specific network interface
+    // will be used, in addition to normal ports bound to the enumerated
+    // interfaces. Without this flag, these "any address" ports would only be
+    // used when network enumeration fails or is disabled. But under certain
+    // conditions, these ports may succeed where others fail, so they may allow
+    // the application to work in a wider variety of environments, at the expense
+    // of having to allocate additional candidates.
+    bool enable_any_address_ports = false;
 
     // Number of SCTP streams to negotiate at SCTP connection establishment.
     // Chiefly useful for testing what happens when you run out.
@@ -1582,6 +1591,18 @@ class RTC_EXPORT PeerConnectionFactoryInterface : public RefCountInterface {
 
   // Stops logging the AEC dump.
   virtual void StopAecDump() = 0;
+
+  // Returns the audio processing state of this factory's shared audio
+  // processing module: per component, what was requested, what the resolver
+  // decided per path, and what is actually running. The APM is owned by the
+  // factory and shared across every peer connection it creates. Returns a
+  // default-constructed state when the factory has no media engine (not
+  // configured for media, or engine creation failed).
+  // Device-level platform processing detail lives on the audio device
+  // module's platform audio processing state instead.
+  virtual AudioProcessingState GetAudioProcessingState() {
+    return {};
+  }
 
  protected:
   // Dtor and ctor protected as objects shouldn't be created or deleted via

@@ -661,6 +661,51 @@ TEST_F(RtpSenderReceiverTest, LocalAudioSourceOptionsApplied) {
   DestroyAudioRtpSender();
 }
 
+TEST_F(RtpSenderReceiverTest, LocalAudioTrackProcessingOptionsReapplied) {
+  AudioOptions options;
+  options.echo_cancellation = true;
+  auto source = LocalAudioSource::Create(&options);
+  CreateAudioRtpSender(source);
+
+  AudioOptions updated_options;
+  updated_options.echo_cancellation = false;
+  updated_options.echo_cancellation_mode = AudioProcessingMode::kSoftware;
+  EXPECT_TRUE(audio_track_->SetAudioProcessingOptions(updated_options).ok());
+
+  EXPECT_EQ(false, source->options().echo_cancellation);
+  EXPECT_EQ(AudioProcessingMode::kSoftware, source->options().echo_cancellation_mode);
+  EXPECT_EQ(false, voice_media_send_channel()->options().echo_cancellation);
+  EXPECT_EQ(AudioProcessingMode::kSoftware, voice_media_send_channel()->options().echo_cancellation_mode);
+
+  DestroyAudioRtpSender();
+}
+
+TEST_F(RtpSenderReceiverTest, DisabledLocalAudioTrackProcessingOptionsAppliedOnEnable) {
+  AudioOptions options;
+  options.echo_cancellation = true;
+  auto source = LocalAudioSource::Create(&options);
+  CreateAudioRtpSender(source);
+
+  audio_track_->set_enabled(false);
+  EXPECT_TRUE(voice_media_send_channel()->IsStreamMuted(kAudioSsrc));
+
+  AudioOptions updated_options;
+  updated_options.echo_cancellation = false;
+  updated_options.echo_cancellation_mode = AudioProcessingMode::kSoftware;
+  EXPECT_TRUE(audio_track_->SetAudioProcessingOptions(updated_options).ok());
+
+  EXPECT_EQ(false, source->options().echo_cancellation);
+  EXPECT_EQ(AudioProcessingMode::kSoftware, source->options().echo_cancellation_mode);
+  EXPECT_EQ(true, voice_media_send_channel()->options().echo_cancellation);
+
+  audio_track_->set_enabled(true);
+  EXPECT_FALSE(voice_media_send_channel()->IsStreamMuted(kAudioSsrc));
+  EXPECT_EQ(false, voice_media_send_channel()->options().echo_cancellation);
+  EXPECT_EQ(AudioProcessingMode::kSoftware, voice_media_send_channel()->options().echo_cancellation_mode);
+
+  DestroyAudioRtpSender();
+}
+
 // Test that the stream is muted when the track is disabled, and unmuted when
 // the track is enabled.
 TEST_F(RtpSenderReceiverTest, LocalAudioTrackDisable) {
@@ -748,8 +793,10 @@ TEST_F(RtpSenderReceiverTest, RemoteAudioTrackSetVolume) {
   CreateAudioRtpReceiver();
 
   double volume;
+  EXPECT_EQ(1.0, audio_track_->GetSource()->GetVolume());
+
   audio_track_->GetSource()->SetVolume(0.5);
-  // Wait for the worker thread to apply the volume change.
+  EXPECT_EQ(0.5, audio_track_->GetSource()->GetVolume());
   FlushWorker();
 
   EXPECT_TRUE(
@@ -759,7 +806,9 @@ TEST_F(RtpSenderReceiverTest, RemoteAudioTrackSetVolume) {
   // Disable the audio track, this should prevent setting the volume.
   audio_track_->set_enabled(false);
   audio_track_->GetSource()->SetVolume(0.8);
+  EXPECT_EQ(0.8, audio_track_->GetSource()->GetVolume());
   FlushWorker();  // Wait for the the volume change.
+
   EXPECT_TRUE(
       voice_media_receive_channel()->GetOutputVolume(kAudioSsrc, &volume));
   EXPECT_EQ(0, volume);
@@ -774,6 +823,9 @@ TEST_F(RtpSenderReceiverTest, RemoteAudioTrackSetVolume) {
 
   // Try changing volume one more time.
   audio_track_->GetSource()->SetVolume(0.9);
+
+  EXPECT_EQ(0.9, audio_track_->GetSource()->GetVolume());
+
   FlushWorker();
 
   EXPECT_TRUE(

@@ -83,6 +83,7 @@
 #include "media/base/media_engine.h"
 #include "media/base/stream_params.h"
 #include "media/engine/adm_helpers.h"
+#include "media/engine/audio_processing_controller.h"
 #include "media/engine/webrtc_media_engine.h"
 #include "modules/async_audio_processing/async_audio_processing.h"
 #include "modules/audio_mixer/audio_mixer_impl.h"
@@ -534,12 +535,7 @@ void WebRtcVoiceEngine::Init() {
     AudioOptions options;
     options.echo_cancellation = true;
     options.auto_gain_control = true;
-#if defined(WEBRTC_IOS)
-    // On iOS, VPIO provides built-in NS.
-    options.noise_suppression = false;
-#else
     options.noise_suppression = true;
-#endif
     options.highpass_filter = true;
     options.stereo_swapping = false;
     options.audio_jitter_buffer_max_packets = 200;
@@ -603,38 +599,13 @@ WebRtcVoiceEngine::CreateReceiveChannel(const Environment& env,
                                                      crypto_options, call);
 }
 
-void WebRtcVoiceEngine::ApplyOptions(const AudioOptions& options_in) {
+AudioProcessingOptionsResult WebRtcVoiceEngine::ApplyOptions(const AudioOptions &options_in) {
   RTC_DCHECK_RUN_ON(&worker_thread_checker_);
   RTC_LOG(LS_INFO) << "WebRtcVoiceEngine::ApplyOptions: "
                    << options_in.ToString();
   AudioOptions options = options_in;  // The options are modified below.
 
-#if defined(WEBRTC_IOS)
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-  if (options.ios_force_software_aec_HACK &&
-      *options.ios_force_software_aec_HACK) {
-#pragma clang diagnostic pop
-    // EC may be forced on for a device known to have non-functioning platform
-    // AEC.
-    options.echo_cancellation = true;
-    RTC_LOG(LS_WARNING)
-        << "Force software AEC on iOS. May conflict with platform AEC.";
-  } else {
-    // On iOS, VPIO provides built-in EC.
-    options.echo_cancellation = false;
-    RTC_LOG(LS_INFO) << "Always disable AEC on iOS. Use built-in instead.";
-  }
-#endif
-
-// Set and adjust gain control options.
-#if defined(WEBRTC_IOS)
-  // On iOS, VPIO provides built-in AGC.
-  options.auto_gain_control = false;
-  RTC_LOG(LS_INFO) << "Always disable AGC on iOS. Use built-in instead.";
-#endif
-
-#if defined(WEBRTC_IOS) || defined(WEBRTC_ANDROID)
+#if defined(WEBRTC_ANDROID)
   // Turn off the gain control if specified by the field trial.
   // The purpose of the field trial is to reduce the amount of resampling
   // performed inside the audio processing module on mobile platforms by
@@ -653,93 +624,32 @@ void WebRtcVoiceEngine::ApplyOptions(const AudioOptions& options_in) {
   }
 #endif
 
-  if (options.echo_cancellation) {
-    // Check if platform supports built-in EC. Currently only supported on
-    // Android and in combination with Java based audio layer.
-    // TODO(henrika): investigate possibility to support built-in EC also
-    // in combination with Open SL ES audio.
-    const bool built_in_aec = adm()->BuiltInAECIsAvailable();
-    if (built_in_aec) {
-      // Built-in EC exists on this device. Enable/Disable it according to the
-      // echo_cancellation audio option.
-      const bool enable_built_in_aec = *options.echo_cancellation;
-      if (adm()->EnableBuiltInAEC(enable_built_in_aec) == 0 &&
-          enable_built_in_aec) {
-        // Disable internal software EC if built-in EC is enabled,
-        // i.e., replace the software EC with the built-in EC.
-        options.echo_cancellation = false;
-        RTC_LOG(LS_INFO)
-            << "Disabling EC since built-in EC will be used instead";
-      }
-    }
-  }
-
-  if (options.auto_gain_control) {
-    bool built_in_agc_avaliable = adm()->BuiltInAGCIsAvailable();
-    if (built_in_agc_avaliable) {
-      if (adm()->EnableBuiltInAGC(*options.auto_gain_control) == 0 &&
-          *options.auto_gain_control) {
-        // Disable internal software AGC if built-in AGC is enabled,
-        // i.e., replace the software AGC with the built-in AGC.
-        options.auto_gain_control = false;
-        RTC_LOG(LS_INFO)
-            << "Disabling AGC since built-in AGC will be used instead";
-      }
-    }
-  }
-
-  if (options.noise_suppression) {
-    if (adm()->BuiltInNSIsAvailable()) {
-      bool builtin_ns = *options.noise_suppression;
-      if (adm()->EnableBuiltInNS(builtin_ns) == 0 && builtin_ns) {
-        // Disable internal software NS if built-in NS is enabled,
-        // i.e., replace the software NS with the built-in NS.
-        options.noise_suppression = false;
-        RTC_LOG(LS_INFO)
-            << "Disabling NS since built-in NS will be used instead";
-      }
-    }
-  }
-
+  // Runtime audio processing is applied best-effort below. Keep unrelated voice
+  // engine settings independent from platform processing resolution.
   if (options.stereo_swapping) {
     audio_state()->SetStereoChannelSwapping(*options.stereo_swapping);
   }
 
-  AudioProcessing* ap = apm();
-  if (!ap) {
-    return;
+  // Jitter buffer options are not engine-level state; they are applied per
+  // receive channel (see WebRtcVoiceReceiveChannel's constructor and
+  // SetOptions).
+
+  AudioProcessingApplyResult apply_result = ApplyAudioProcessingOptions(apm(), adm(), options);
+  if (!apply_result.result.ok()) {
+    RTC_LOG(LS_WARNING) << "Audio processing options were not fully applied: " << apply_result.result.message;
   }
+  last_requested_audio_processing_options_ = options_in;
+  options = apply_result.resolved_options;
+  last_resolved_audio_processing_options_ = options;
+  RTC_LOG(LS_INFO) << "Applied audio processing options: " << options.ToString();
 
-  AudioProcessing::Config apm_config = ap->GetConfig();
+  return AudioProcessingOptionsResult::Applied();
+}
 
-  if (options.echo_cancellation) {
-    apm_config.echo_canceller.enabled = *options.echo_cancellation;
-  }
-
-  if (options.auto_gain_control) {
-    const bool enabled = *options.auto_gain_control;
-    apm_config.gain_controller1.enabled = enabled;
-#if defined(WEBRTC_IOS) || defined(WEBRTC_ANDROID)
-    apm_config.gain_controller1.mode =
-        AudioProcessing::Config::GainController1::kFixedDigital;
-#else
-    apm_config.gain_controller1.mode =
-        AudioProcessing::Config::GainController1::kAdaptiveAnalog;
-#endif
-  }
-
-  if (options.highpass_filter) {
-    apm_config.high_pass_filter.enabled = *options.highpass_filter;
-  }
-
-  if (options.noise_suppression) {
-    const bool enabled = *options.noise_suppression;
-    apm_config.noise_suppression.enabled = enabled;
-    apm_config.noise_suppression.level =
-        AudioProcessing::Config::NoiseSuppression::Level::kHigh;
-  }
-
-  ap->ApplyConfig(apm_config);
+AudioProcessingState WebRtcVoiceEngine::GetAudioProcessingState() {
+  RTC_DCHECK_RUN_ON(&worker_thread_checker_);
+  return webrtc::GetAudioProcessingState(apm(), adm(), last_requested_audio_processing_options_,
+                                                last_resolved_audio_processing_options_);
 }
 
 const std::vector<Codec>& WebRtcVoiceEngine::LegacySendCodecs() const {
@@ -995,7 +905,7 @@ class WebRtcVoiceSendChannel::WebRtcAudioSendStream : public AudioSource::Sink {
     muted_ = muted;
   }
 
-  bool muted() const {
+  bool IsMuted() const {
     RTC_DCHECK_RUN_ON(&worker_thread_checker_);
     return muted_;
   }
@@ -1020,6 +930,11 @@ class WebRtcVoiceSendChannel::WebRtcAudioSendStream : public AudioSource::Sink {
     source->SetSink(this);
     source_ = source;
     UpdateSendState();
+  }
+
+  bool HasSource() const {
+    RTC_DCHECK_RUN_ON(&worker_thread_checker_);
+    return source_ != nullptr;
   }
 
   // Stops sending by setting the sink of the AudioSource to nullptr. No data
@@ -1301,8 +1216,14 @@ bool WebRtcVoiceSendChannel::SetOptions(const AudioOptions& options) {
   // We retain all of the existing options, and apply the given ones
   // on top.  This means there is no way to "clear" options such that
   // they go back to the engine default.
-  options_.SetAll(options);
-  engine()->ApplyOptions(options_);
+  AudioOptions updated_options = options_;
+  updated_options.SetAll(options);
+  AudioProcessingOptionsResult result = engine()->ApplyOptions(updated_options);
+  if (!result.ok()) {
+    RTC_LOG(LS_WARNING) << "Rejected voice channel options: " << result.message;
+    return false;
+  }
+  options_ = updated_options;
 
   std::optional<std::string> audio_network_adaptor_config =
       GetAudioNetworkAdaptorConfig(options_);
@@ -1773,13 +1694,46 @@ bool WebRtcVoiceSendChannel::MuteStream(uint32_t ssrc, bool muted) {
   // This implementation is not ideal, instead we should signal the AGC when
   // the mic channel is muted/unmuted. We can't do it today because there
   // is no good way to know which stream is mapping to the mic channel.
-  bool all_muted = muted;
-  for (const auto& kv : send_streams_) {
-    all_muted = all_muted && kv.second->muted();
-  }
-  AudioProcessing* ap = engine()->apm();
-  if (ap) {
-    ap->set_output_will_be_muted(all_muted);
+  if (send_streams_.size() > 0) {
+    // This will be true if MuteStream is called from
+    // AudioRtpSender::ClearSend().
+    bool is_all_no_source =
+        std::none_of(send_streams_.begin(), send_streams_.end(),
+                     [](const auto& kv) { return kv.second->HasSource(); });
+
+    bool is_all_muted =
+        std::all_of(send_streams_.begin(), send_streams_.end(),
+                    [](const auto& kv) { return kv.second->IsMuted(); });
+
+    // Only mute the microphone if we're not in cleanup state
+    // (i.e. if we have active send streams)
+    webrtc::AudioProcessing* ap = engine()->apm();
+    if (ap) {
+      bool v = !is_all_no_source && is_all_muted;
+      RTC_LOG(LS_INFO) << "WebRtcVoiceSendChannel::MuteStream: APM:" << v;
+      ap->set_output_will_be_muted(v);
+    }
+
+    if (!is_all_no_source) {
+      // We don't mute when ClearSend() is called.
+      webrtc::AudioDeviceModule* adm = engine()->adm();
+      if (adm) {
+        RTC_LOG(LS_INFO) << "WebRtcVoiceSendChannel::MuteStream: ADM:"
+                         << is_all_muted;
+
+        if (adm->IsStopOnMuteModeEnabled()) {
+          if (!is_all_muted && !adm->Recording()) {
+            if (adm->InitRecording() == 0) {
+              adm->StartRecording();
+            }
+          } else if (is_all_muted && adm->Recording()) {
+            adm->StopRecording();
+          }
+        } else {
+          adm->SetMicrophoneMute(is_all_muted);
+        }
+      }
+    }
   }
 
   return true;
@@ -2175,6 +2129,17 @@ WebRtcVoiceReceiveChannel::WebRtcVoiceReceiveChannel(
       crypto_options_(crypto_options) {
   RTC_LOG(LS_VERBOSE) << "WebRtcVoiceReceiveChannel::WebRtcVoiceReceiveChannel";
   RTC_DCHECK(call);
+  // Streams may be added before SetOptions() is ever called, so seed the
+  // jitter buffer settings from the options the channel was created with.
+  // Keep this in sync with SetOptions().
+  if (options_.audio_jitter_buffer_max_packets) {
+    audio_config_.audio_jitter_buffer_max_packets =
+        std::max(20, *options_.audio_jitter_buffer_max_packets);
+  }
+  if (options_.audio_jitter_buffer_fast_accelerate) {
+    audio_config_.audio_jitter_buffer_fast_accelerate =
+        *options_.audio_jitter_buffer_fast_accelerate;
+  }
 }
 
 WebRtcVoiceReceiveChannel::~WebRtcVoiceReceiveChannel() {
@@ -2262,8 +2227,14 @@ bool WebRtcVoiceReceiveChannel::SetOptions(const AudioOptions& options) {
   // We retain all of the existing options, and apply the given ones
   // on top.  This means there is no way to "clear" options such that
   // they go back to the engine default.
-  options_.SetAll(options);
-  engine()->ApplyOptions(options_);
+  AudioOptions updated_options = options_;
+  updated_options.SetAll(options);
+  AudioProcessingOptionsResult result = engine()->ApplyOptions(updated_options);
+  if (!result.ok()) {
+    RTC_LOG(LS_WARNING) << "Rejected voice channel options: " << result.message;
+    return false;
+  }
+  options_ = updated_options;
 
   // Check if any options changed that should apply to receive streams.
   if (options.audio_jitter_buffer_max_packets &&

@@ -70,7 +70,7 @@ void decompressionOutputCallback(void *decoderRef,
   RTC_OBJC_TYPE(
       RTCVideoFrame) *decodedFrame = [[RTC_OBJC_TYPE(RTCVideoFrame) alloc]
       initWithBuffer:frameBuffer
-            rotation:RTCVideoRotation_0
+            rotation:RTC_OBJC_TYPE(RTCVideoRotation_0)
          timeStampNs:CMTimeGetSeconds(timestamp) * webrtc::kNumNanosecsPerSec];
   decodedFrame.timeStamp = decodeParams->timestamp;
   decodeParams->callback(decodedFrame);
@@ -87,23 +87,23 @@ void decompressionOutputCallback(void *decoderRef,
 
 + (NSArray<RTC_OBJC_TYPE(RTCVideoCodecInfo) *> *)supportedCodecs {
   NSDictionary<NSString *, NSString *> *constrainedHighParams = @{
-    @"profile-level-id" : kRTCMaxSupportedH264ProfileLevelConstrainedHigh,
+    @"profile-level-id" : RTC_CONSTANT_TYPE(RTCMaxSupportedH264ProfileLevelConstrainedHigh),
     @"level-asymmetry-allowed" : @"1",
     @"packetization-mode" : @"1",
   };
   RTC_OBJC_TYPE(RTCVideoCodecInfo) *constrainedHighInfo =
       [[RTC_OBJC_TYPE(RTCVideoCodecInfo) alloc]
-          initWithName:kRTCVideoCodecH264Name
+          initWithName:RTC_CONSTANT_TYPE(RTCVideoCodecH264Name)
             parameters:constrainedHighParams];
 
   NSDictionary<NSString *, NSString *> *constrainedBaselineParams = @{
-    @"profile-level-id" : kRTCMaxSupportedH264ProfileLevelConstrainedBaseline,
+    @"profile-level-id" : RTC_CONSTANT_TYPE(RTCMaxSupportedH264ProfileLevelConstrainedBaseline),
     @"level-asymmetry-allowed" : @"1",
     @"packetization-mode" : @"1",
   };
   RTC_OBJC_TYPE(RTCVideoCodecInfo) *constrainedBaselineInfo =
       [[RTC_OBJC_TYPE(RTCVideoCodecInfo) alloc]
-          initWithName:kRTCVideoCodecH264Name
+          initWithName:RTC_CONSTANT_TYPE(RTCVideoCodecH264Name)
             parameters:constrainedBaselineParams];
 
   return @[ constrainedHighInfo, constrainedBaselineInfo ];
@@ -249,7 +249,7 @@ void decompressionOutputCallback(void *decoderRef,
   NSDictionary *attributes = @{
 #if defined(WEBRTC_IOS) && (TARGET_OS_MACCATALYST || TARGET_OS_SIMULATOR)
     (NSString *)kCVPixelBufferMetalCompatibilityKey : @(YES),
-#elif defined(WEBRTC_IOS)
+#elif defined(WEBRTC_IOS) && !defined(TARGET_OS_VISION)
     (NSString *)kCVPixelBufferOpenGLESCompatibilityKey : @(YES),
 #elif defined(WEBRTC_MAC) && !defined(WEBRTC_ARCH_ARM64)
     (NSString *)kCVPixelBufferOpenGLCompatibilityKey : @(YES),
@@ -284,11 +284,7 @@ void decompressionOutputCallback(void *decoderRef,
 
 - (void)configureDecompressionSession {
   RTC_DCHECK(_decompressionSession);
-#if defined(WEBRTC_IOS)
-  VTSessionSetProperty(_decompressionSession,
-                       kVTDecompressionPropertyKey_RealTime,
-                       kCFBooleanTrue);
-#endif
+  VTSessionSetProperty(_decompressionSession, kVTDecompressionPropertyKey_RealTime, kCFBooleanTrue);
 }
 
 - (void)destroyDecompressionSession {

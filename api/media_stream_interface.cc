@@ -19,6 +19,10 @@ namespace webrtc {
 const char* const MediaStreamTrackInterface::kVideoKind = kMediaTypeVideo;
 const char* const MediaStreamTrackInterface::kAudioKind = kMediaTypeAudio;
 
+bool VideoTrackInterface::should_receive() const {
+  return true;
+}
+
 VideoTrackInterface::ContentHint VideoTrackInterface::content_hint() const {
   return ContentHint::kNone;
 }
@@ -30,6 +34,11 @@ bool AudioTrackInterface::GetSignalLevel(int* /* level */) {
 scoped_refptr<AudioProcessorInterface>
 AudioTrackInterface::GetAudioProcessor() {
   return nullptr;
+}
+
+AudioProcessingOptionsResult AudioTrackInterface::SetAudioProcessingOptions(const AudioOptions & /* options */) {
+  return AudioProcessingOptionsResult::Rejected(AudioProcessingOptionsResultCode::kApplyFailed,
+                                                "Audio processing options are not supported by this track");
 }
 
 const AudioOptions AudioSourceInterface::options() const {

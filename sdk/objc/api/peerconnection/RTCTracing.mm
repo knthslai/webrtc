@@ -14,19 +14,19 @@
 #include "api/environment/environment_factory.h"
 #include "rtc_base/event_tracer.h"
 
-void RTCSetupInternalTracer(void) {
+void RTC_OBJC_TYPE(RTCSetupInternalTracer)(void) {
   webrtc::Environment env = webrtc::CreateEnvironment();
   webrtc::tracing::SetupInternalTracer(env);
 }
 
-BOOL RTCStartInternalCapture(NSString *filePath) {
+BOOL RTC_OBJC_TYPE(RTCStartInternalCapture)(NSString *filePath) {
   return webrtc::tracing::StartInternalCapture(filePath.UTF8String);
 }
 
-void RTCStopInternalCapture(void) {
+void RTC_OBJC_TYPE(RTCStopInternalCapture)(void) {
   webrtc::tracing::StopInternalCapture();
 }
 
-void RTCShutdownInternalTracer(void) {
+void RTC_OBJC_TYPE(RTCShutdownInternalTracer)(void) {
   webrtc::tracing::ShutdownInternalTracer();
 }

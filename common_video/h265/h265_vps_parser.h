@@ -11,6 +11,7 @@
 #ifndef COMMON_VIDEO_H265_H265_VPS_PARSER_H_
 #define COMMON_VIDEO_H265_H265_VPS_PARSER_H_
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -23,12 +24,16 @@ namespace webrtc {
 // A class for parsing out video parameter set (VPS) data from an H265 NALU.
 class RTC_EXPORT H265VpsParser {
  public:
+    static constexpr uint32_t kMaxSubLayers = 7;
+
   // The parsed state of the VPS. Only some select values are stored.
   // Add more as they are actually needed.
   struct RTC_EXPORT VpsState {
     VpsState();
 
     uint32_t id = 0;
+    uint32_t vps_max_sub_layers_minus1 = 0;
+    std::array<uint32_t, kMaxSubLayers> vps_max_num_reorder_pics = {};
   };
 
   // Unpack RBSP and parse VPS state from the supplied buffer.

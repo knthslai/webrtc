@@ -255,12 +255,15 @@ rtc_library("audio_device_impl") {
     ":audio_device_default",
     ":audio_device_dummy",
     ":audio_device_generic",
+    "../../api:array_view",
+    "../../api:audio_options_api",
     "../../api:make_ref_counted",
     "../../api:ref_count",
     "../../api:refcountedbase",
     "../../api:scoped_refptr",
     "../../api:sequence_checker",
     "../../api/audio:audio_device",
+    "../../api/audio:audio_processing_options_resolver",
     "../../api/environment",
     "../../api/task_queue",
     "../../api/units:time_delta",
@@ -356,12 +359,25 @@ rtc_library("audio_device_impl") {
           "linux/pulseaudiosymboltable_linux.h",
         ]
       }
+      if (is_mac || is_ios) {
+        sources += [
+          "audio_engine_device.h",
+          "audio_engine_device.mm",
+        ]
+      }
+      if (is_ios) {
+        deps += [
+          "../../sdk:audio_session_objc",
+        ]
+      }
       if (is_mac) {
         sources += [
           "mac/audio_device_mac.cc",
           "mac/audio_device_mac.h",
           "mac/audio_mixer_manager_mac.cc",
           "mac/audio_mixer_manager_mac.h",
+          "mac/audio_device_utils_mac.cc",
+          "mac/audio_device_utils_mac.h",
         ]
         deps += [
           ":audio_device_impl_frameworks",
@@ -412,6 +428,8 @@ if (is_mac) {
 
       # Needed for CGEventSourceKeyState in audio_device_mac.cc:
       "CoreGraphics.framework",
+
+      "AVFoundation.framework",
     ]
   }
 }

@@ -23,6 +23,7 @@
 #include <string>
 #include <vector>
 
+#include "api/audio/audio_processing_options_result.h"
 #include "api/audio/audio_processing_statistics.h"
 #include "api/audio_options.h"
 #include "api/ref_count.h"
@@ -189,6 +190,8 @@ class RTC_EXPORT VideoTrackInterface : public MediaStreamTrackInterface,
 
   virtual VideoTrackSourceInterface* GetSource() const = 0;
 
+  virtual void set_should_receive(bool should_receive) {}
+  virtual bool should_receive() const;
   virtual ContentHint content_hint() const;
   virtual void set_content_hint(ContentHint /* hint */) {}
 
@@ -252,6 +255,7 @@ class RTC_EXPORT AudioSourceInterface : public MediaSourceInterface {
   // TODO(tommi): This method should be on the track and ideally volume should
   // be applied in the track in a way that does not affect clones of the track.
   virtual void SetVolume(double /* volume */) {}
+  virtual double GetVolume() const { return 1.0; }
 
   // Registers/unregisters observers to the audio source.
   virtual void RegisterAudioObserver(AudioObserver* /* observer */) {}
@@ -265,6 +269,7 @@ class RTC_EXPORT AudioSourceInterface : public MediaSourceInterface {
   // (for some of the settings this approach is broken, e.g. setting
   // audio network adaptation on the source is the wrong layer of abstraction).
   virtual const AudioOptions options() const;
+  virtual void SetOptions(const AudioOptions & /* options */) {}
 };
 
 // Interface of the audio processor used by the audio track to collect
@@ -292,6 +297,29 @@ class RTC_EXPORT AudioTrackInterface : public MediaStreamTrackInterface {
   // TODO(deadbeef): Figure out if the following interface should be const or
   // not.
   virtual AudioSourceInterface* GetSource() const = 0;
+
+  // Sets/gets the volume of the underlying source. `volume` is in the range of
+  // [0, 10].
+  virtual void SetVolume(double volume) {
+    AudioSourceInterface* source = GetSource();
+    if (source) {
+      source->SetVolume(volume);
+    }
+  }
+  virtual double GetVolume() const {
+    AudioSourceInterface* source = GetSource();
+    return source ? source->GetVolume() : 1.0;
+  }
+
+  // Updates echo cancellation, noise suppression, automatic gain control, and
+  // high-pass filter options on the underlying local source. Returns kStored
+  // when the request was accepted and stored. Implementations may notify track
+  // observers so active senders can reapply the updated options without
+  // replacing the track. Rejections mean the options were not stored. The
+  // effective audio processing module configuration is shared by the voice
+  // engine/channel, so conflicting updates from multiple local tracks are not
+  // isolated per track.
+  virtual AudioProcessingOptionsResult SetAudioProcessingOptions(const AudioOptions &options);
 
   // Add/Remove a sink that will receive the audio data from the track.
   virtual void AddSink(AudioTrackSinkInterface* sink) = 0;

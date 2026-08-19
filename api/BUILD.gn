@@ -164,6 +164,7 @@ rtc_library("media_stream_interface") {
     "notifier.h",
   ]
   deps = [
+    "audio:audio_processing_options_result",
     ":audio_options_api",
     ":ref_count",
     ":rtp_parameters",
@@ -476,6 +477,7 @@ rtc_library("peer_connection_interface") {
     "audio:audio_frame_processor",
     "audio:audio_mixer_api",
     "audio:audio_processing",
+    "audio:audio_processing_state",
     "audio_codecs:audio_codecs_api",
     "crypto:options",
     "environment",
@@ -641,6 +643,7 @@ rtc_library("libjingle_peerconnection_api") {
     "audio:audio_frame_processor",
     "audio:audio_mixer_api",
     "audio:audio_processing",
+    "audio:audio_processing_state",
     "audio_codecs:audio_codecs_api",
     "crypto:frame_decryptor_interface",
     "crypto:frame_encryptor_interface",
@@ -657,6 +660,9 @@ rtc_library("libjingle_peerconnection_api") {
     "transport/rtp:rtp_source",
     "units:time_delta",
     "video:video_bitrate_allocator_factory",
+    "video:video_frame",
+    "video:yuv_helper",
+    "video:video_rtp_headers",
     "video_codecs:video_codecs_api",
     "//third_party/abseil-cpp/absl/algorithm:container",
     "//third_party/abseil-cpp/absl/base:core_headers",

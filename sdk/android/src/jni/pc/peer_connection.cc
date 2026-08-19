@@ -32,8 +32,10 @@
 #include <unistd.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <memory>
+#include <optional>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -305,6 +307,9 @@ void JavaToNativeRTCConfiguration(
       Java_RTCConfiguration_getOfferExtmapAllowMixed(jni, j_rtc_config);
   rtc_config->enable_implicit_rollback =
       Java_RTCConfiguration_getEnableImplicitRollback(jni, j_rtc_config);
+
+  rtc_config->enable_any_address_ports =
+      Java_RTCConfiguration_getEnableIceGatheringOnAnyAddressPorts(jni, j_rtc_config);
 
   jni_zero::ScopedJavaLocalRef<jstring> j_turn_logging_id =
       Java_RTCConfiguration_getTurnLoggingId(jni, j_rtc_config);
